@@ -39,6 +39,41 @@ class BgpView(object):
     def terse(self):
         raise NotImplementedError('subclass must implement this')
 
+class Search(BgpView):
+    def __init__(self, term):
+        self.endpoint = 'search'
+        self.query_term = term
+        self.query()
+
+    def query(self):
+        # need to override the base class in this case because the API is different
+        self.url = f'{BASE_URL}/{self.endpoint}'
+        params = {'query_term': self.query_term}
+        r = requests.get(self.url,params=params)
+        r.raise_for_status()
+        if r.status_code == 200:
+            if r.json()['status'] == 'ok':
+                self.response_data = r.json()['data']
+            self.error = True
+
+    @property
+    def summary(self):
+        summary = ''
+        for i in self.response_data['asns']:
+            line = [i['asn'],i['name'],i['country_code'],i['rir_name'],i['abuse_contacts'][0]]
+            line_str = ','.join(str(i) for i in line) + '\n'
+            summary += line_str
+        return summary
+
+    @property
+    def terse(self):
+        return self.summary
+
+    @property
+    def asns(self):
+        return [i.get('asn') for i in self.response_data.get('asns')]
+
+
 class ASN(BgpView):
 
     def __init__(self, asn):
@@ -345,6 +380,14 @@ def main():
     asn.add_argument('--terse', '-t', action='store_true',
                       help="show terse data")
 
+    search = subs.add_parser('search', help="Free text query for ASN names")
+    search.add_argument('--query', '-q', required=True,
+                      help="free text search term")
+    search.add_argument('--verbose', '-v', action='store_true',
+                      help="show all data")
+    search.add_argument('--terse', '-t', action='store_true',
+                      help="show terse data")
+
     args, unknown = parser.parse_known_args()
     data = None
 
@@ -354,6 +397,9 @@ def main():
     try:
         if args.cmd == 'asn':
             data = ASN(args.query)
+            print_output(data,args)
+        elif args.cmd == 'search':
+            data = Search(args.query)
             print_output(data,args)
         elif args.cmd == 'prefixes':
             data = Prefixes(args.query)
